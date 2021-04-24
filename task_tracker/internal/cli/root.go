@@ -27,6 +27,8 @@ func ExecuteLine(line string) error {
 	switch subcommand {
 	case "add":
 		return handleAdd(args[1:])
+	// case "update":
+	// 	return handleUpdate(args[1:])
 	case "list":
 		return HandleList()
 	case "help":

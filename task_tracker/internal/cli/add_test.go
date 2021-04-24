@@ -23,6 +23,18 @@ func TestHandleAdd_CliParsing(t *testing.T) {
 			wantTitle: "clean the car",
 		},
 		{
+			name:      "Strips out sorrounding quotation marks",
+			inputArgs: []string{`"clean`, "the", `car"`},
+			wantErr:   false,
+			wantTitle: "clean the car",
+		},
+		{
+			name:      "Keeps quotes within the text",
+			inputArgs: []string{`"clean`, `"the"`, `car"`},
+			wantErr:   false,
+			wantTitle: `clean "the" car`,
+		},
+		{
 			name:      "Empty input returns validation error",
 			inputArgs: []string{},
 			wantErr:   true,

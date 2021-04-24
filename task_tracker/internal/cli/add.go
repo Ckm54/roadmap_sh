@@ -17,7 +17,12 @@ func handleAdd(subArgs []string) error {
 	}
 
 	taskTitle := strings.Join(addCmd.Args(), " ")
-	if strings.TrimSpace(taskTitle) == "" {
+
+	taskTitle = strings.TrimSpace(taskTitle)
+	taskTitle = strings.Trim(taskTitle, `"'`)
+	taskTitle = strings.TrimSpace(taskTitle)
+
+	if taskTitle == "" {
 		return errors.New("task cannot be empty; usage add [title]")
 	}
 
