@@ -54,3 +54,19 @@ func (s *Service) Update(id int, title string) error {
 
 	return fmt.Errorf("task with ID %d not found", id)
 }
+
+func (s *Service) Delete(id int) error {
+	tasks, err := s.store.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load tasks: %w", err)
+	}
+
+	for i, t := range tasks {
+		if t.ID == id {
+			tasks = append(tasks[:i], tasks[i+1:]...)
+			return s.store.Save(tasks)
+		}
+	}
+
+	return fmt.Errorf("task with ID %d not found", id)
+}

@@ -9,6 +9,7 @@ import (
 type TaskRunner interface {
 	Add(title string) error
 	Update(id int, title string) error
+	Delete(id int) error
 }
 
 var svc TaskRunner
@@ -31,6 +32,8 @@ func ExecuteLine(line string) error {
 		return handleAdd(args[1:])
 	case "update":
 		return handleUpdate(args[1:])
+	case "delete":
+		return handleDelete(args[1:])
 	case "list":
 		return HandleList()
 	case "help":
@@ -47,7 +50,9 @@ func printGlobalHelp() {
 	fmt.Println("	task [command]")
 	fmt.Println("\nAvailable commands:")
 	fmt.Println("	add			Add a new task")
-	fmt.Println("	list		List all your pending tasks")
+	fmt.Println("	list			List all your pending tasks")
+	fmt.Println("	update [id] [title]	Update a task matching id")
+	fmt.Println("	delete [id]		Delete a task matching id")
 }
 
 func prepareTaskTitle(cmd *flag.FlagSet) string {

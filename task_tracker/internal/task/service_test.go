@@ -144,3 +144,72 @@ func TestService_Update(t *testing.T) {
 		})
 	}
 }
+
+func TestService_Delete(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialTasks   []TaskEntity
+		inputID        int
+		wantErr        bool
+		wantTasksCount int
+	}{
+		{
+			name: "Successfully deletes an existing task",
+			initialTasks: []TaskEntity{
+				{ID: 1, Title: "Buy groceries", Status: StatusTodo},
+			},
+			inputID:        1,
+			wantErr:        false,
+			wantTasksCount: 0,
+		},
+		{
+			name: "Deletes the correct task when multiple exist",
+			initialTasks: []TaskEntity{
+				{ID: 1, Title: "Task one", Status: StatusTodo},
+				{ID: 2, Title: "Task two", Status: StatusTodo},
+				{ID: 3, Title: "Task three", Status: StatusTodo},
+			},
+			inputID:        2,
+			wantErr:        false,
+			wantTasksCount: 2,
+		},
+		{
+			name: "Fails if task ID does not exist",
+			initialTasks: []TaskEntity{
+				{ID: 1, Title: "Buy groceries", Status: StatusTodo},
+			},
+			inputID: 42,
+			wantErr: true,
+		},
+		{
+			name:         "Fails if store is unavailable",
+			initialTasks: nil,
+			inputID:      1,
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
+			svc := NewService(memStore)
+
+			err := svc.Delete(tt.inputID)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Delete() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr {
+				if len(memStore.tasks) != tt.wantTasksCount {
+					t.Errorf("Expected %d tasks remaining, got %d", tt.wantTasksCount, len(memStore.tasks))
+				}
+
+				for _, task := range memStore.tasks {
+					if task.ID == tt.inputID {
+						t.Errorf("Task with ID %d still present after deletion", tt.inputID)
+					}
+				}
+			}
+		})
+	}
+}
