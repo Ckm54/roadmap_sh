@@ -9,6 +9,7 @@ import (
 type TaskRunner interface {
 	Add(title string) error
 	Update(id int, title string) error
+	UpdateStatus(id int, status string) error
 	Delete(id int) error
 }
 
@@ -32,6 +33,8 @@ func ExecuteLine(line string) error {
 		return handleAdd(args[1:])
 	case "update":
 		return handleUpdate(args[1:])
+	case "mark-in-progress", "mark-done":
+		return handleUpdateStatus(args)
 	case "delete":
 		return handleDelete(args[1:])
 	case "list":

@@ -213,3 +213,72 @@ func TestService_Delete(t *testing.T) {
 		})
 	}
 }
+
+func TestService_UpdateStatus(t *testing.T) {
+	oldTime := time.Now().Add(-1 * time.Hour)
+
+	tests := []struct {
+		name           string
+		initialTasks   []TaskEntity
+		inputID        int
+		inputStatus    string
+		wantErr        bool
+		expectedStatus string
+	}{
+		{
+			name:           "Successfully marks a task as in-progress",
+			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			inputID:        1,
+			inputStatus:    StatusInProgress,
+			wantErr:        false,
+			expectedStatus: StatusInProgress,
+		},
+		{
+			name:           "Successfully marks a task as done",
+			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: StatusInProgress, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			inputID:        1,
+			inputStatus:    StatusDone,
+			wantErr:        false,
+			expectedStatus: StatusDone,
+		},
+		{
+			name:         "Fails if task ID does not exist",
+			initialTasks: []TaskEntity{{ID: 1, Title: "Task", Status: StatusTodo}},
+			inputID:      42,
+			inputStatus:  StatusDone,
+			wantErr:      true,
+		},
+		{
+			name:         "Fails if store is unavailable",
+			initialTasks: nil,
+			inputID:      1,
+			inputStatus:  StatusDone,
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
+			svc := NewService(memStore)
+
+			err := svc.UpdateStatus(tt.inputID, tt.inputStatus)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("UpdateStatus() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr {
+				updated := memStore.tasks[0]
+				if updated.Status != tt.expectedStatus {
+					t.Errorf("Expected status %q, got %q", tt.expectedStatus, updated.Status)
+				}
+				if !updated.UpdatedAt.After(oldTime) {
+					t.Error("Expected UpdatedAt to be refreshed, but it was not")
+				}
+				if updated.CreatedAt != oldTime {
+					t.Error("Expected CreatedAt to be unchanged")
+				}
+			}
+		})
+	}
+}
