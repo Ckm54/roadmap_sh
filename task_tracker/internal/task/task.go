@@ -10,13 +10,11 @@ type TaskEntity struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-var (
-	StatusTodo       = "todo"
-	StatusInProgress = "in-progress"
-	StatusDone       = "done"
-)
-
 type DataStore interface {
 	Load() ([]TaskEntity, error)
 	Save([]TaskEntity) error
+}
+
+func (t *TaskEntity) String() string {
+	return t.Title
 }

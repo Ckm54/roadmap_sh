@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ckm54/task_tracker/internal/task"
+	"github.com/ckm54/task_tracker/internal/constants"
 )
 
 func handleUpdate(subArgs []string) error {
@@ -75,7 +75,7 @@ func handleUpdateStatus(subArgs []string) error {
 			return fmt.Errorf("invalid ID %q: must be a number", subArgs[1])
 		}
 
-		return svc.UpdateStatus(id, task.StatusInProgress)
+		return svc.UpdateStatus(id, constants.StatusInProgress)
 	case "mark-done":
 		if err := markDoneCmd.Parse(subArgs[1:]); err != nil {
 			return err
@@ -91,7 +91,7 @@ func handleUpdateStatus(subArgs []string) error {
 			return fmt.Errorf("invalid ID %q: must be a number", subArgs[1])
 		}
 
-		return svc.UpdateStatus(id, task.StatusDone)
+		return svc.UpdateStatus(id, constants.StatusDone)
 	default:
 		return fmt.Errorf("unknown command %v", subArgs)
 	}

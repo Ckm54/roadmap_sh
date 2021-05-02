@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+
+	"github.com/ckm54/task_tracker/internal/task"
 )
 
 type TaskRunner interface {
@@ -11,6 +13,7 @@ type TaskRunner interface {
 	Update(id int, title string) error
 	UpdateStatus(id int, status string) error
 	Delete(id int) error
+	List(filter string) ([]task.TaskEntity, error)
 }
 
 var svc TaskRunner
@@ -38,7 +41,7 @@ func ExecuteLine(line string) error {
 	case "delete":
 		return handleDelete(args[1:])
 	case "list":
-		return HandleList()
+		return HandleList(args[1:])
 	case "help":
 		printGlobalHelp()
 		return nil

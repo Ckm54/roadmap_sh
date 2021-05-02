@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/ckm54/task_tracker/internal/task"
+	"github.com/ckm54/task_tracker/internal/constants"
 )
 
 func TestHandleUpdateStatus_CLIRouting(t *testing.T) {
@@ -20,14 +20,14 @@ func TestHandleUpdateStatus_CLIRouting(t *testing.T) {
 			inputArgs:  []string{"mark-in-progress", "1"},
 			wantErr:    false,
 			wantID:     1,
-			wantStatus: task.StatusInProgress,
+			wantStatus: constants.StatusInProgress,
 		},
 		{
 			name:       "Successfully updates a task with a different ID",
 			inputArgs:  []string{"mark-done", "234"},
 			wantErr:    false,
 			wantID:     234,
-			wantStatus: task.StatusDone,
+			wantStatus: constants.StatusDone,
 		},
 		{
 			name:      "Fails when no arguments are passed",
@@ -40,13 +40,23 @@ func TestHandleUpdateStatus_CLIRouting(t *testing.T) {
 			wantErr:   true,
 		},
 		{
-			name:      "Fails when id is missing",
+			name:      "Fails to mark in progress when id is missing",
 			inputArgs: []string{"mark-in-progress"},
 			wantErr:   true,
 		},
 		{
-			name:      "Fails if ID is non-numeric",
+			name:      "Fails to mark in progress if ID is non-numeric",
 			inputArgs: []string{"mark-in-progress", "abcds"},
+			wantErr:   true,
+		},
+		{
+			name:      "Fails to mark done when id is missing",
+			inputArgs: []string{"mark-done"},
+			wantErr:   true,
+		},
+		{
+			name:      "Fails to mark done if ID is non-numeric",
+			inputArgs: []string{"mark-done", "abcds"},
 			wantErr:   true,
 		},
 		{

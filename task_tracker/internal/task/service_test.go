@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/ckm54/task_tracker/internal/constants"
 )
 
 type mockStore struct {
@@ -97,7 +99,7 @@ func TestService_Update(t *testing.T) {
 	}{
 		{
 			name:          "Successfully updates an existing task",
-			initialTasks:  []TaskEntity{{ID: 1, Title: "Old Title", Status: StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			initialTasks:  []TaskEntity{{ID: 1, Title: "Old Title", Status: constants.StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
 			inputID:       1,
 			inputTitle:    "New Title",
 			wantErr:       false,
@@ -105,7 +107,7 @@ func TestService_Update(t *testing.T) {
 		},
 		{
 			name:         "Fails if task ID does not exist",
-			initialTasks: []TaskEntity{{ID: 1, Title: "Old Title", Status: StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			initialTasks: []TaskEntity{{ID: 1, Title: "Old Title", Status: constants.StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
 			inputID:      42,
 			inputTitle:   "New Title",
 			wantErr:      true,
@@ -156,7 +158,7 @@ func TestService_Delete(t *testing.T) {
 		{
 			name: "Successfully deletes an existing task",
 			initialTasks: []TaskEntity{
-				{ID: 1, Title: "Buy groceries", Status: StatusTodo},
+				{ID: 1, Title: "Buy groceries", Status: constants.StatusTodo},
 			},
 			inputID:        1,
 			wantErr:        false,
@@ -165,9 +167,9 @@ func TestService_Delete(t *testing.T) {
 		{
 			name: "Deletes the correct task when multiple exist",
 			initialTasks: []TaskEntity{
-				{ID: 1, Title: "Task one", Status: StatusTodo},
-				{ID: 2, Title: "Task two", Status: StatusTodo},
-				{ID: 3, Title: "Task three", Status: StatusTodo},
+				{ID: 1, Title: "Task one", Status: constants.StatusTodo},
+				{ID: 2, Title: "Task two", Status: constants.StatusTodo},
+				{ID: 3, Title: "Task three", Status: constants.StatusTodo},
 			},
 			inputID:        2,
 			wantErr:        false,
@@ -176,7 +178,7 @@ func TestService_Delete(t *testing.T) {
 		{
 			name: "Fails if task ID does not exist",
 			initialTasks: []TaskEntity{
-				{ID: 1, Title: "Buy groceries", Status: StatusTodo},
+				{ID: 1, Title: "Buy groceries", Status: constants.StatusTodo},
 			},
 			inputID: 42,
 			wantErr: true,
@@ -227,32 +229,32 @@ func TestService_UpdateStatus(t *testing.T) {
 	}{
 		{
 			name:           "Successfully marks a task as in-progress",
-			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
 			inputID:        1,
-			inputStatus:    StatusInProgress,
+			inputStatus:    constants.StatusInProgress,
 			wantErr:        false,
-			expectedStatus: StatusInProgress,
+			expectedStatus: constants.StatusInProgress,
 		},
 		{
 			name:           "Successfully marks a task as done",
-			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: StatusInProgress, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusInProgress, CreatedAt: oldTime, UpdatedAt: oldTime}},
 			inputID:        1,
-			inputStatus:    StatusDone,
+			inputStatus:    constants.StatusDone,
 			wantErr:        false,
-			expectedStatus: StatusDone,
+			expectedStatus: constants.StatusDone,
 		},
 		{
 			name:         "Fails if task ID does not exist",
-			initialTasks: []TaskEntity{{ID: 1, Title: "Task", Status: StatusTodo}},
+			initialTasks: []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusTodo}},
 			inputID:      42,
-			inputStatus:  StatusDone,
+			inputStatus:  constants.StatusDone,
 			wantErr:      true,
 		},
 		{
 			name:         "Fails if store is unavailable",
 			initialTasks: nil,
 			inputID:      1,
-			inputStatus:  StatusDone,
+			inputStatus:  constants.StatusDone,
 			wantErr:      true,
 		},
 	}
@@ -277,6 +279,102 @@ func TestService_UpdateStatus(t *testing.T) {
 				}
 				if updated.CreatedAt != oldTime {
 					t.Error("Expected CreatedAt to be unchanged")
+				}
+			}
+		})
+	}
+}
+
+func TestService_List(t *testing.T) {
+	tasks := []TaskEntity{
+		{ID: 1, Title: "Buy groceries", Status: constants.StatusTodo},
+		{ID: 2, Title: "Write tests", Status: constants.StatusInProgress},
+		{ID: 3, Title: "Deploy app", Status: constants.StatusDone},
+		{ID: 4, Title: "Review PR", Status: constants.StatusDone},
+	}
+
+	tests := []struct {
+		name          string
+		initialTasks  []TaskEntity
+		filter        string
+		wantErr       bool
+		wantCount     int
+		wantStatusAll string
+	}{
+		{
+			name:         "Returns all tasks when filter is empty",
+			initialTasks: tasks,
+			filter:       "",
+			wantErr:      false,
+			wantCount:    4,
+		},
+		{
+			name:          "Returns only todo tasks",
+			initialTasks:  tasks,
+			filter:        constants.StatusTodo,
+			wantErr:       false,
+			wantCount:     1,
+			wantStatusAll: constants.StatusTodo,
+		},
+		{
+			name:          "Returns only in-progress tasks",
+			initialTasks:  tasks,
+			filter:        constants.StatusInProgress,
+			wantErr:       false,
+			wantCount:     1,
+			wantStatusAll: constants.StatusInProgress,
+		},
+		{
+			name:          "Returns only done tasks",
+			initialTasks:  tasks,
+			filter:        constants.StatusDone,
+			wantErr:       false,
+			wantCount:     2,
+			wantStatusAll: constants.StatusDone,
+		},
+		{
+			name:         "Returns empty slice when no tasks match the filter",
+			initialTasks: []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusTodo}},
+			filter:       constants.StatusDone,
+			wantErr:      false,
+			wantCount:    0,
+		},
+		{
+			name:         "Returns empty slice when store is empty",
+			initialTasks: []TaskEntity{},
+			filter:       "",
+			wantErr:      false,
+			wantCount:    0,
+		},
+		{
+			name:         "Fails if store is unavailable",
+			initialTasks: nil,
+			filter:       "",
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
+			svc := NewService(memStore)
+
+			result, err := svc.List(tt.filter)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("List() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr {
+				if len(result) != tt.wantCount {
+					t.Errorf("Expected %d tasks, got %d", tt.wantCount, len(result))
+				}
+
+				if tt.wantStatusAll != "" {
+					for _, task := range result {
+						if task.Status != tt.wantStatusAll {
+							t.Errorf("Expected all tasks to have status %q, got %q", tt.wantStatusAll, task.Status)
+						}
+					}
 				}
 			}
 		})

@@ -1,6 +1,10 @@
 package cli
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/ckm54/task_tracker/internal/task"
+)
 
 type mockCliService struct {
 	calledAddTitle       string
@@ -9,6 +13,7 @@ type mockCliService struct {
 	calledDeleteID       int
 	calledUpdateStatusID int
 	calledUpdateStatus   string
+	calledListFilter     string
 	shouldFail           bool
 }
 
@@ -36,6 +41,14 @@ func (m *mockCliService) UpdateStatus(id int, status string) error {
 		return errors.New("backend service failure")
 	}
 	return nil
+}
+
+func (m *mockCliService) List(filter string) ([]task.TaskEntity, error) {
+	m.calledListFilter = filter
+	if m.shouldFail {
+		return nil, errors.New("backend service failure")
+	}
+	return []task.TaskEntity{}, nil
 }
 
 func (m *mockCliService) Delete(id int) error {

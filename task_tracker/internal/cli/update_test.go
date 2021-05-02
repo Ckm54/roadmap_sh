@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ckm54/task_tracker/internal/constants"
 	"github.com/ckm54/task_tracker/internal/task"
 )
 
@@ -38,6 +39,11 @@ func TestHandleUpdate_CliRouting(t *testing.T) {
 		{
 			name:      "Fails if only ID is provided but title is missing",
 			inputArgs: []string{"1"},
+			wantErr:   true,
+		},
+		{
+			name:      "Fails if ID is provided but title is empty",
+			inputArgs: []string{"1", "'   '"},
 			wantErr:   true,
 		},
 		{
@@ -77,5 +83,5 @@ func TestHandleUpdate_CliRouting(t *testing.T) {
 }
 
 func includeTask(id int, title string, t time.Time) task.TaskEntity {
-	return task.TaskEntity{ID: id, Title: title, Status: task.StatusTodo, CreatedAt: t, UpdatedAt: t}
+	return task.TaskEntity{ID: id, Title: title, Status: constants.StatusTodo, CreatedAt: t, UpdatedAt: t}
 }

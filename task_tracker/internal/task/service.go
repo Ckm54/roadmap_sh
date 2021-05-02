@@ -2,7 +2,11 @@ package task
 
 import (
 	"fmt"
+	"iter"
+	"slices"
 	"time"
+
+	"github.com/ckm54/task_tracker/internal/constants"
 )
 
 type Service struct {
@@ -28,7 +32,7 @@ func (s *Service) Add(title string) error {
 	newTask := TaskEntity{
 		ID:        nextID,
 		Title:     title,
-		Status:    StatusTodo,
+		Status:    constants.StatusTodo,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -72,6 +76,20 @@ func (s *Service) UpdateStatus(id int, status string) error {
 	return fmt.Errorf("task with ID %d not found", id)
 }
 
+func (s *Service) List(filter string) ([]TaskEntity, error) {
+	tasks, err := s.store.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load tasks: %w", err)
+	}
+
+	if filter != "" {
+		filteredTasks := filterTasks(tasks, func(t TaskEntity) bool { return t.Status == filter })
+		tasks = slices.Collect(filteredTasks)
+	}
+
+	return tasks, nil
+}
+
 func (s *Service) Delete(id int) error {
 	tasks, err := s.store.Load()
 	if err != nil {
@@ -86,4 +104,16 @@ func (s *Service) Delete(id int) error {
 	}
 
 	return fmt.Errorf("task with ID %d not found", id)
+}
+
+func filterTasks[T any](slice []T, predicate func(T) bool) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for _, item := range slice {
+			if predicate(item) {
+				if !yield(item) {
+					return
+				}
+			}
+		}
+	}
 }
