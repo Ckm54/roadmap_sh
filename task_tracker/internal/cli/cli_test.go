@@ -17,12 +17,12 @@ type mockCliService struct {
 	shouldFail           bool
 }
 
-func (m *mockCliService) Add(title string) error {
+func (m *mockCliService) Add(title string) (int, error) {
 	m.calledAddTitle = title
 	if m.shouldFail {
-		return errors.New("mock storage failure")
+		return 0, errors.New("mock storage failure")
 	}
-	return nil
+	return 0, nil
 }
 
 func (m *mockCliService) Update(id int, title string) error {

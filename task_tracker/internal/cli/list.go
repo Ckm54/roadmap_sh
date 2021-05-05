@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/ckm54/task_tracker/internal/constants"
 )
@@ -14,7 +15,7 @@ var filterOptions map[string]string = map[string]string{
 	"in-progress": constants.StatusInProgress,
 }
 
-func HandleList(subArgs []string) error {
+func handleList(subArgs []string) error {
 	listCmd := flag.NewFlagSet("list", flag.ContinueOnError)
 	listCmd.SetOutput(io.Discard)
 
@@ -42,8 +43,18 @@ func HandleList(subArgs []string) error {
 		return err
 	}
 
-	for _, task := range tasks {
-		fmt.Println(task.String())
+	if len(tasks) == 0 {
+		if filter != "" {
+			fmt.Printf("No tasks found matching %q\n", filter)
+		} else {
+			fmt.Printf("It seems no tasks have been added.\nTo add one:\t add [description]\n")
+		}
+	} else {
+		fmt.Printf("ID\tDescription\tStatus\tCreated\n")
+		fmt.Println(strings.Repeat("-", 40))
+		for _, task := range tasks {
+			fmt.Printf("%d:\t%s\t%s\t%s\n", task.ID, task.Title, task.Status, task.CreatedAt.Format("2006-01-02"))
+		}
 	}
 
 	return nil

@@ -17,10 +17,10 @@ func NewService(store DataStore) *Service {
 	return &Service{store: store}
 }
 
-func (s *Service) Add(title string) error {
+func (s *Service) Add(title string) (int, error) {
 	tasks, err := s.store.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load tasks: %w", err)
+		return 0, fmt.Errorf("failed to load tasks: %w", err)
 	}
 
 	nextID := 1
@@ -39,7 +39,7 @@ func (s *Service) Add(title string) error {
 
 	tasks = append(tasks, newTask)
 
-	return s.store.Save(tasks)
+	return nextID, s.store.Save(tasks)
 }
 
 func (s *Service) Update(id int, title string) error {

@@ -60,7 +60,7 @@ func TestService_Add(t *testing.T) {
 			memStore := &mockStore{tasks: tt.initialTasks}
 			svc := NewService(memStore)
 
-			err := svc.Add(tt.inputTitle)
+			id, err := svc.Add(tt.inputTitle)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Add() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -69,8 +69,8 @@ func TestService_Add(t *testing.T) {
 				savedTasks := memStore.tasks
 				newCreatedTask := savedTasks[len(savedTasks)-1]
 
-				if newCreatedTask.ID != tt.wantID {
-					t.Errorf("Expected ID %d, got %d", tt.wantID, newCreatedTask.ID)
+				if id != tt.wantID {
+					t.Errorf("Expected ID %d, got %d", tt.wantID, id)
 				}
 				if newCreatedTask.Title != tt.inputTitle {
 					t.Errorf("Expected Title %q, got %q", tt.inputTitle, newCreatedTask.Title)

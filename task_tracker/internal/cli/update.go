@@ -37,7 +37,13 @@ func handleUpdate(subArgs []string) error {
 		return errors.New("new title cannot be empty")
 	}
 
-	return svc.Update(id, newTitle)
+	err = svc.Update(id, newTitle)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Task updated successfully")
+	return nil
 }
 
 func handleUpdateStatus(subArgs []string) error {
@@ -75,7 +81,13 @@ func handleUpdateStatus(subArgs []string) error {
 			return fmt.Errorf("invalid ID %q: must be a number", subArgs[1])
 		}
 
-		return svc.UpdateStatus(id, constants.StatusInProgress)
+		err = svc.UpdateStatus(id, constants.StatusInProgress)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Task %d status updated.\n", id)
+		return nil
 	case "mark-done":
 		if err := markDoneCmd.Parse(subArgs[1:]); err != nil {
 			return err
@@ -91,7 +103,13 @@ func handleUpdateStatus(subArgs []string) error {
 			return fmt.Errorf("invalid ID %q: must be a number", subArgs[1])
 		}
 
-		return svc.UpdateStatus(id, constants.StatusDone)
+		err = svc.UpdateStatus(id, constants.StatusDone)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Task %d status updated.\n", id)
+		return nil
 	default:
 		return fmt.Errorf("unknown command %v", subArgs)
 	}

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 )
 
@@ -21,5 +22,11 @@ func handleAdd(subArgs []string) error {
 		return errors.New("task cannot be empty; usage add [title]")
 	}
 
-	return svc.Add(taskTitle)
+	id, err := svc.Add(taskTitle)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Task added successfully (ID: %d)\n", id)
+	return nil
 }

@@ -14,7 +14,3 @@ type DataStore interface {
 	Load() ([]TaskEntity, error)
 	Save([]TaskEntity) error
 }
-
-func (t *TaskEntity) String() string {
-	return t.Title
-}

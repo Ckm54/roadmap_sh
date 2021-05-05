@@ -4,11 +4,11 @@ import "testing"
 
 func TestHandleList_CLIRouting(t *testing.T) {
 	tests := []struct {
-		name             string
-		inputArgs        []string
-		shouldFailSvc    bool
-		wantErr          bool
-		wantFilter       string
+		name          string
+		inputArgs     []string
+		shouldFailSvc bool
+		wantErr       bool
+		wantFilter    string
 	}{
 		{
 			name:       "Lists all tasks when no filter is provided",
@@ -57,7 +57,7 @@ func TestHandleList_CLIRouting(t *testing.T) {
 			mockSvc := &mockCliService{shouldFail: tt.shouldFailSvc}
 			svc = mockSvc
 
-			err := HandleList(tt.inputArgs)
+			err := handleList(tt.inputArgs)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("HandleList() error=%v, wantErr %v", err, tt.wantErr)
 			}

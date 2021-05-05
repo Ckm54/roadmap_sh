@@ -26,5 +26,11 @@ func handleDelete(subArgs []string) error {
 		return fmt.Errorf("invalid id %q: must be a number", args[0])
 	}
 
-	return svc.Delete(id)
+	err = svc.Delete(id)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Task deleted. Was ID %d\n", id)
+	return nil
 }
