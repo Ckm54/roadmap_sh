@@ -55,10 +55,12 @@ func printGlobalHelp() {
 	fmt.Println("\nUsage:")
 	fmt.Println("	task [command]")
 	fmt.Println("\nAvailable commands:")
-	fmt.Println("	add			Add a new task")
-	fmt.Println("	list			List all your pending tasks")
-	fmt.Println("	update [id] [title]	Update a task matching id")
-	fmt.Println("	delete [id]		Delete a task matching id")
+	fmt.Println("	add [title]			Add a new task")
+	fmt.Println("	list [filter]			List tasks; filter by status: todo, in-progress, done")
+	fmt.Println("	update [id] [title]		Update a task title by id")
+	fmt.Println("	mark-in-progress [id]		Mark a task as in-progress")
+	fmt.Println("	mark-done [id]			Mark a task as done")
+	fmt.Println("	delete [id]			Delete a task by id")
 }
 
 func prepareTaskTitle(cmd *flag.FlagSet) string {
