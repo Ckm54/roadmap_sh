@@ -1,177 +1,172 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
-type GitHubEvent struct {
-	Type    string          `json:"type"`
-	Repo    RepoInfo        `json:"repo"`
-	Payload json.RawMessage `json:"payload"`
-}
+// maxConcurrentCompares caps parallel compare API calls when counting commits.
+const maxConcurrentCompares = 8
 
-type RepoInfo struct {
-	Name string `json:"name"`
-}
-
-type PushPayload struct {
-	Size int `json:"size"`
-}
-
-type ActionPayload struct {
-	Action string `json:"action"` // used by issues, PRs and watch events
-}
-
-type CreatePayload struct {
-	RefType string `json:"ref_type"` // branch or tag
-	Ref     string `json:"ref"`      // name of the branch or tag
+type app struct {
+	out, errOut io.Writer
+	baseURL     string
+	token       string
+	tokenSource string
 }
 
 func main() {
-	fmt.Println("Welcome to gh activity")
+	token, source := findToken(os.Getenv, ghAuthToken)
+	a := &app{
+		out:         os.Stdout,
+		errOut:      os.Stderr,
+		baseURL:     defaultBaseURL,
+		token:       token,
+		tokenSource: source,
+	}
+	os.Exit(a.run(os.Args[1:]))
+}
 
-	args := os.Args[1:]
+func (a *app) run(args []string) int {
+	fmt.Fprintln(a.out, "Welcome to gh activity")
 
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "username required\n")
-		os.Exit(1)
+	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+		fmt.Fprintln(a.errOut, "username required")
+		return 1
+	}
+	username := strings.TrimSpace(args[0])
+
+	ctx := context.Background()
+	client := NewClient(a.baseURL, a.token)
+
+	events, err := client.UserEvents(ctx, username)
+
+	// A bad token shouldn't stop public data from loading: warn and retry
+	// without it.
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && a.token != "" {
+		fmt.Fprintf(a.errOut, "[Warning] GitHub rejected the token from %s; continuing without it.\n", a.tokenSource)
+		a.token, a.tokenSource = "", ""
+		client = NewClient(a.baseURL, "")
+		events, err = client.UserEvents(ctx, username)
 	}
 
-	gh_username := strings.TrimSpace(args[0])
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	gh_url := fmt.Sprintf("https://api.github.com/users/%s/events", gh_username)
-	req, err := http.NewRequest(http.MethodGet, gh_url, nil)
 	if err != nil {
-		log.Fatalf("Error creating the request: %v", err)
-	}
-
-	req.Header.Add("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "Go-GitHub-CLI")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Error executing the request: %v", err)
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		switch resp.StatusCode {
-		case http.StatusNotFound:
-			fmt.Fprintf(os.Stderr, "Error: GitHub user '%s' not found.\n", gh_username)
-		case http.StatusForbidden:
-			fmt.Fprintln(os.Stderr, "Error: Rate limit exceeded. Try again later or use an API token.")
-		default:
-			fmt.Fprintf(os.Stderr, "GitHub API returned unexpected status: %s\n", resp.Status)
-		}
-		os.Exit(1)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalf("Error reading response payload: %v", err)
-	}
-
-	var events []GitHubEvent
-	if err := json.Unmarshal(bodyBytes, &events); err != nil {
-		log.Fatalf("Error parsing JSON: %v", err)
+		a.printError(username, err)
+		return 1
 	}
 
 	if len(events) == 0 {
-		fmt.Printf("No recent public events found for user: %q\n", gh_username)
+		fmt.Fprintf(a.out, "No recent public events found for user: %q\n", username)
+		return 0
+	}
+
+	counts, pushesWithoutCount := a.commitCounts(ctx, client, events)
+
+	lines, warnings := formatEvents(events, counts)
+	for _, w := range warnings {
+		fmt.Fprintf(a.errOut, "[Warning] %s\n", w)
+	}
+
+	fmt.Fprintln(a.out, "Output:")
+	for _, line := range lines {
+		fmt.Fprintf(a.out, "- %s\n", line)
+	}
+
+	if pushesWithoutCount {
+		fmt.Fprintln(a.errOut, "Tip: set GITHUB_TOKEN or run 'gh auth login' to see commit counts for pushes.")
+	}
+	return 0
+}
+
+type compareRequest struct {
+	repo string
+	push PushPayload
+}
+
+// commitCounts looks up commit counts for push events with the compare API.
+// It only does so with a token, since each push costs one request and the
+// unauthenticated limit is 60 an hour. Failed lookups are skipped, and those
+// pushes are shown without a count. The second result reports whether there
+// were pushes that went uncounted only because there was no token.
+func (a *app) commitCounts(ctx context.Context, client *Client, events []GitHubEvent) (map[string]int, bool) {
+	var requests []compareRequest
+	seen := map[string]bool{}
+	for _, e := range events {
+		if e.Type != "PushEvent" {
+			continue
+		}
+		var p PushPayload
+		if json.Unmarshal(e.Payload, &p) != nil || !p.canCompare() || seen[p.compareKey()] {
+			continue
+		}
+		seen[p.compareKey()] = true
+		requests = append(requests, compareRequest{repo: e.Repo.Name, push: p})
+	}
+
+	counts := map[string]int{}
+	if len(requests) == 0 {
+		return counts, false
+	}
+	if a.token == "" {
+		return counts, true
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	var (
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, maxConcurrentCompares)
+	)
+	for _, r := range requests {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			n, err := client.CommitCount(ctx, r.repo, r.push.Before, r.push.Head)
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			counts[r.push.compareKey()] = n
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+
+	return counts, false
+}
+
+func (a *app) printError(username string, err error) {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		fmt.Fprintf(a.errOut, "Error executing the request: %v\n", err)
 		return
 	}
 
-	fmt.Println("Output:")
-	for _, event := range events {
-		formattedText, err := formatEvent(event)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[Warning] Failed to parse %s: %v\n", event.Type, err)
-			continue
+	switch {
+	case apiErr.StatusCode == http.StatusNotFound:
+		fmt.Fprintf(a.errOut, "Error: GitHub user '%s' not found.\n", username)
+	case apiErr.RateLimited:
+		msg := "Error: GitHub API rate limit exceeded."
+		if !apiErr.Reset.IsZero() {
+			msg += fmt.Sprintf(" It resets at %s.", apiErr.Reset.Local().Format("15:04"))
 		}
-
-		if formattedText != "" {
-			fmt.Printf("- %s\n", formattedText)
+		if a.token == "" {
+			msg += " Set GITHUB_TOKEN or run 'gh auth login' for a higher limit."
 		}
-	}
-
-}
-
-func formatEvent(event GitHubEvent) (string, error) {
-	repoName := event.Repo.Name
-
-	switch event.Type {
-	case "PushEvent":
-		var p PushPayload
-		if err := json.Unmarshal(event.Payload, &p); err != nil {
-			return "", fmt.Errorf("invalid push payload structure: %w", err)
-		}
-		commitStr := "commit"
-		if p.Size != 1 {
-			commitStr = "commits"
-		}
-		return fmt.Sprintf("Pushed %d %s to %s", p.Size, commitStr, repoName), nil
-
-	case "IssuesEvent":
-		var p ActionPayload
-		if err := json.Unmarshal(event.Payload, &p); err != nil {
-			return "", fmt.Errorf("invalid issues payload structure: %w", err)
-		}
-		if p.Action == "opened" {
-			return fmt.Sprintf("Opened a new issue in %s", repoName), nil
-		}
-		return fmt.Sprintf("%s an issue in %s", capitalize(p.Action), repoName), nil
-
-	case "WatchEvent":
-		var p ActionPayload
-		if err := json.Unmarshal(event.Payload, &p); err != nil {
-			return "", fmt.Errorf("invalid watch payload structure: %w", err)
-		}
-		if p.Action == "started" {
-			return fmt.Sprintf("Starred %s", repoName), nil
-		}
-		return fmt.Sprintf("Watched %s", repoName), nil
-
-	case "PullRequestEvent":
-		var p ActionPayload
-		if err := json.Unmarshal(event.Payload, &p); err != nil {
-			return "", fmt.Errorf("invalid PR payload structure: %w", err)
-		}
-		return fmt.Sprintf("%s a pull request in %s", capitalize(p.Action), repoName), nil
-
-	case "CreateEvent":
-		var p CreatePayload
-		if err := json.Unmarshal(event.Payload, &p); err != nil {
-			return "", fmt.Errorf("invalid create payload structure: %w", err)
-		}
-		return fmt.Sprintf("Created a new %s '%s' in %s", p.RefType, p.Ref, repoName), nil
-
-	case "IssueCommentEvent":
-		return fmt.Sprintf("Commented on an issue in %s", repoName), nil
-
-	case "ForkEvent":
-		return fmt.Sprintf("Forked %s", repoName), nil
-
+		fmt.Fprintln(a.errOut, msg)
 	default:
-		// Return empty for unhandled types instead of throwing an error
-		return fmt.Sprintf("Performed a %s activity in %s", event.Type, repoName), nil
+		fmt.Fprintf(a.errOut, "GitHub API returned unexpected status: %s\n", apiErr.Status)
 	}
-}
-
-func capitalize(s string) string {
-	if len(s) == 0 {
-		return ""
-	}
-	return string(s[0]-32) + s[1:]
 }
