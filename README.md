@@ -1,9 +1,37 @@
-# Solutions
+# roadmap.sh Solutions
 
-A collection of project solutions to [roadmap.sh](https://roadmap.sh/projects) challenges.
+My solutions to [roadmap.sh](https://roadmap.sh/projects) project challenges.
 
 ## Projects
 
-| Project                                                  | Description                                             |
-| -------------------------------------------------------- | ------------------------------------------------------- |
-| [Task Tracker](https://roadmap.sh/projects/task-tracker) | CLI tool for tracking tasks and managing their statuses |
+| Project                       | roadmap.sh challenge                                                     | Description                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| [task_tracker](task_tracker/) | [Task Tracker](https://roadmap.sh/projects/task-tracker)                 | CLI for managing tasks, with statuses, priorities, due dates, tags and JSON storage |
+| [gh_activity](gh_activity/)   | [GitHub User Activity](https://roadmap.sh/projects/github-user-activity) | CLI that shows a GitHub user's recent public activity using the GitHub API          |
+
+## Getting started
+
+You need [Go](https://go.dev/dl/) 1.27 or newer, plus `make` if you want to use the Makefiles.
+
+```bash
+git clone https://github.com/ckm54/roadmap_sh.git
+cd roadmap_sh/<project>
+make build      # binary goes in ./bin
+make test
+make help       # list all targets
+```
+
+See each project's README for usage details.
+
+## Repository layout
+
+```
+.
+├── .github/workflows/   CI and release workflows
+├── task_tracker/        Task Tracker CLI (task-cli)
+└── gh_activity/         GitHub User Activity CLI (gh-activity)
+```
+
+## CI and releases
+
+[WIP]
