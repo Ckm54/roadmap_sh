@@ -8,6 +8,7 @@ My solutions to [roadmap.sh](https://roadmap.sh/projects) project challenges.
 | ----------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | [task_tracker](task_tracker/) | [Task Tracker](https://roadmap.sh/projects/task-tracker)                 | CLI for managing tasks, with statuses, priorities, due dates, tags and JSON storage |
 | [gh_activity](gh_activity/)   | [GitHub User Activity](https://roadmap.sh/projects/github-user-activity) | CLI that shows a GitHub user's recent public activity using the GitHub API          |
+| [expense-tracker-go](expense-tracker-go/) | [Expense Tracker](https://roadmap.sh/projects/expense-tracker) | CLI for recording expenses and totalling them by month or year, with JSON storage |
 
 ## Getting started
 
@@ -29,7 +30,8 @@ See each project's README for usage details.
 .
 ├── .github/workflows/   CI and release workflows
 ├── task_tracker/        Task Tracker CLI (task-cli)
-└── gh_activity/         GitHub User Activity CLI (gh-activity)
+├── gh_activity/         GitHub User Activity CLI (gh-activity)
+└── expense-tracker-go/  Expense Tracker CLI (expense-tracker)
 ```
 
 ## CI and releases
