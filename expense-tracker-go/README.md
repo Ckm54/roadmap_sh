@@ -1,6 +1,6 @@
 # Expense Tracker CLI
 
-A small command-line expense tracker written in Go, using only the standard library. Expenses are stored in a local JSON file.
+A small command-line expense tracker written in Go. Expenses are stored in a local JSON file.
 
 This is a solution to the [Expense Tracker](https://roadmap.sh/projects/expense-tracker) project on roadmap.sh.
 
@@ -42,11 +42,11 @@ $ expense-tracker summary --month 8 --year 2025
 Total expenses for August 2025: $0.00
 ```
 
-| Command   | Flags                                    | Notes                                                  |
-| --------- | ---------------------------------------- | ------------------------------------------------------ |
+| Command   | Flags                                      | Notes                                                  |
+| --------- | ------------------------------------------ | ------------------------------------------------------ |
 | `add`     | `--description <text>` `--amount <number>` | Amount must be positive, with at most 2 decimal places |
-| `list`    | none                                     | Sorted by ID                                           |
-| `summary` | `--month <1-12>` `--year <yyyy>`         | `--month` alone means that month of the current year   |
+| `list`    | none                                       | Sorted by ID                                           |
+| `summary` | `--month <1-12>` `--year <yyyy>`           | `--month` alone means that month of the current year   |
 
 Run `expense-tracker help` or `expense-tracker <command> --help` for details.
 
@@ -62,16 +62,16 @@ EXPENSE_CLI_FILE=./expenses.json expense-tracker list
 
 ## Development
 
-| Command                    | Description                      |
-| -------------------------- | -------------------------------- |
-| `make build`               | Compile the binary to `./bin`    |
-| `make run ARGS="summary"`  | Build and run with arguments     |
-| `make test`                | Run tests with the race detector |
-| `make cover`               | Open an HTML coverage report     |
-| `make vet` / `make fmt`    | Vet / format the code            |
-| `make lint`                | Run golangci-lint                |
-| `make all`                 | Format, vet, test and build      |
-| `make help`                | List all targets                 |
+| Command                   | Description                      |
+| ------------------------- | -------------------------------- |
+| `make build`              | Compile the binary to `./bin`    |
+| `make run ARGS="summary"` | Build and run with arguments     |
+| `make test`               | Run tests with the race detector |
+| `make cover`              | Open an HTML coverage report     |
+| `make vet` / `make fmt`   | Vet / format the code            |
+| `make lint`               | Run golangci-lint                |
+| `make all`                | Format, vet, test and build      |
+| `make help`               | List all targets                 |
 
 ```
 cmd/expense-tracker/   Entry point: wires the pieces together
