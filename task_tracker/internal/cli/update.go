@@ -2,115 +2,106 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"strconv"
 	"strings"
 
-	"github.com/ckm54/task_tracker/internal/constants"
+	"github.com/ckm54/task_tracker/internal/task"
 )
 
-func handleUpdate(subArgs []string) error {
-	updateCmd := flag.NewFlagSet("update", flag.ContinueOnError)
-	updateCmd.SetOutput(io.Discard)
+func (a *App) runUpdate(args []string) error {
+	fs := a.flagSet("update")
+	var priority, due string
+	var tags tagsFlag
+	var clearTags bool
+	fs.StringVar(&priority, "priority", "", "new priority `level`: low, medium or high")
+	fs.StringVar(&priority, "p", "", "shorthand for --priority")
+	fs.StringVar(&due, "due", "", "new due `date`: YYYY-MM-DD, today, tomorrow, or none to remove it")
+	fs.Var(&tags, "tag", "replace the tags with `tag`; repeat or comma-separate for several")
+	fs.Var(&tags, "t", "shorthand for --tag")
+	fs.BoolVar(&clearTags, "clear-tags", false, "remove all tags")
 
-	if err := updateCmd.Parse(subArgs); err != nil {
+	positional, err := a.parse(fs, args)
+	if err != nil {
 		return err
 	}
-
-	args := updateCmd.Args()
-	if len(args) < 2 {
-		return errors.New("usage: update [id] [new title]")
+	if len(positional) == 0 {
+		return errors.New("usage: update <id> [description] [flags]")
 	}
 
-	id, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid ID %q: must be a number", args[0])
-	}
-
-	newTitle := strings.TrimSpace(strings.Join(args[1:], " "))
-	newTitle = strings.Trim(newTitle, `"'`)
-	newTitle = strings.TrimSpace(newTitle)
-
-	if newTitle == "" {
-		return errors.New("new title cannot be empty")
-	}
-
-	err = svc.Update(id, newTitle)
+	id, err := parseID(positional[0])
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Task updated successfully")
+	var patch task.Patch
+	changed := false
+
+	if len(positional) > 1 {
+		description := joinText(positional[1:])
+		if description == "" {
+			return errors.New("new description cannot be empty")
+		}
+		patch.Description = &description
+		changed = true
+	}
+	if priority != "" {
+		p, err := task.ParsePriority(priority)
+		if err != nil {
+			return err
+		}
+		patch.Priority = &p
+		changed = true
+	}
+	if due != "" {
+		if strings.EqualFold(due, "none") {
+			patch.ClearDue = true
+		} else if patch.Due, err = parseDate(due, a.now()); err != nil {
+			return err
+		}
+		changed = true
+	}
+	if clearTags && len(tags) > 0 {
+		return errors.New("use either --tag or --clear-tags, not both")
+	}
+	if clearTags || len(tags) > 0 {
+		t := []string(tags)
+		patch.Tags = &t
+		changed = true
+	}
+
+	if !changed {
+		return errors.New("nothing to update; give a new description or a flag (see 'help update')")
+	}
+
+	if err := a.svc.Update(id, patch); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(a.out, "Task %d updated successfully\n", id)
 	return nil
 }
 
-func handleUpdateStatus(subArgs []string) error {
-	if len(subArgs) < 1 {
-		msg := fmt.Sprintf("expected [mark-in-progress] [id] or [mark-done] [id] subcommands")
-		return errors.New(msg)
-	}
-
-	command := subArgs[0]
-
-	// id, err := strconv.Atoi(subArgs[1])
-	// if err != nil {
-	// 	return fmt.Errorf("invalid ID %q: must be a number", subArgs[1])
-	// }
-
-	markInProgressCmd := flag.NewFlagSet("mark-in-progress", flag.ContinueOnError)
-	markInProgressCmd.SetOutput(io.Discard)
-
-	markDoneCmd := flag.NewFlagSet("mark-done", flag.ContinueOnError)
-	markDoneCmd.SetOutput(io.Discard)
-
-	switch command {
-	case "mark-in-progress":
-		if err := markInProgressCmd.Parse(subArgs[1:]); err != nil {
-			return err
-		}
-
-		remaining := markInProgressCmd.Args()
-		if len(remaining) < 1 {
-			return errors.New("missing ID: usage: mark-in-progress [id]")
-		}
-
-		id, err := strconv.Atoi(remaining[0])
-		if err != nil {
-			return fmt.Errorf("invalid ID %q: must be a number", subArgs[1])
-		}
-
-		err = svc.UpdateStatus(id, constants.StatusInProgress)
+func (a *App) statusRunner(status task.Status) func(args []string) error {
+	return func(args []string) error {
+		positional, err := a.parse(a.flagSet("mark-"+string(status)), args)
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Task %d status updated.\n", id)
+		ids, err := parseIDs(positional)
+		if err != nil {
+			return err
+		}
+
+		if err := a.svc.SetStatus(ids, status); err != nil {
+			return err
+		}
+
+		if len(ids) == 1 {
+			fmt.Fprintf(a.out, "Task %d marked as %s\n", ids[0], status)
+		} else {
+			fmt.Fprintf(a.out, "Tasks %s marked as %s\n", joinIDs(ids), status)
+		}
 		return nil
-	case "mark-done":
-		if err := markDoneCmd.Parse(subArgs[1:]); err != nil {
-			return err
-		}
-
-		remaining := markDoneCmd.Args()
-		if len(remaining) < 1 {
-			return errors.New("missing ID: usage: mark-done [id]")
-		}
-
-		id, err := strconv.Atoi(remaining[0])
-		if err != nil {
-			return fmt.Errorf("invalid ID %q: must be a number", subArgs[1])
-		}
-
-		err = svc.UpdateStatus(id, constants.StatusDone)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Task %d status updated.\n", id)
-		return nil
-	default:
-		return fmt.Errorf("unknown command %v", subArgs)
 	}
 }

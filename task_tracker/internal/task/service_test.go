@@ -1,382 +1,409 @@
 package task
 
 import (
-	"fmt"
+	"errors"
+	"slices"
 	"testing"
 	"time"
-
-	"github.com/ckm54/task_tracker/internal/constants"
 )
 
-type mockStore struct {
-	tasks      []TaskEntity
+// memStore behaves like a file: Load returns a copy, so the service can
+// only change what is stored by calling Save.
+type memStore struct {
+	state      State
 	shouldFail bool
+	saves      int
 }
 
-func (m *mockStore) Load() ([]TaskEntity, error) {
+func (m *memStore) Load() (*State, error) {
 	if m.shouldFail {
-		return nil, fmt.Errorf("simulated DB error")
+		return nil, errors.New("simulated storage error")
 	}
-
-	return m.tasks, nil
+	return &State{NextID: m.state.NextID, Tasks: slices.Clone(m.state.Tasks)}, nil
 }
 
-func (m *mockStore) Save(tasks []TaskEntity) error {
-	m.tasks = tasks
+func (m *memStore) Save(s *State) error {
+	m.saves++
+	m.state = State{NextID: s.NextID, Tasks: slices.Clone(s.Tasks)}
 	return nil
 }
 
+var (
+	baseTime = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	nowTime  = baseTime.Add(48 * time.Hour)
+)
+
+func newTestService(tasks ...TaskEntity) (*Service, *memStore) {
+	store := &memStore{state: State{Tasks: tasks}}
+	svc := NewService(store)
+	svc.now = func() time.Time { return nowTime }
+	return svc, store
+}
+
+func taskWith(id int, status Status) TaskEntity {
+	return TaskEntity{ID: id, Description: "task", Status: status, Priority: PriorityMedium, CreatedAt: baseTime, UpdatedAt: baseTime}
+}
+
+func ids(tasks []TaskEntity) []int {
+	out := make([]int, len(tasks))
+	for i, t := range tasks {
+		out[i] = t.ID
+	}
+	return out
+}
+
 func TestService_Add(t *testing.T) {
-	tests := []struct {
-		name         string
-		initialTasks []TaskEntity
-		inputTitle   string
-		wantID       int
-		wantStatus   string
-		wantErr      bool
-	}{
-		{
-			name:         "Add task to an empty tracker",
-			initialTasks: []TaskEntity{},
-			inputTitle:   "Buy groceries",
-			wantID:       1,
-			wantStatus:   "todo",
-			wantErr:      false,
-		},
-		{
-			name: "IDs increment sequentially",
-			initialTasks: []TaskEntity{
-				{ID: 1, Title: "Existing Task", Status: "todo"},
-			},
-			inputTitle: "New Task",
-			wantID:     2,
-			wantStatus: "todo",
-			wantErr:    false,
-		},
+	t.Run("first task gets ID 1 and defaults", func(t *testing.T) {
+		svc, store := newTestService()
+
+		got, err := svc.Add("Buy groceries", AddOptions{Tags: []string{" Home ", "home", "", "Errands"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got.ID != 1 || got.Status != StatusTodo || got.Priority != PriorityMedium {
+			t.Errorf("unexpected task: %+v", got)
+		}
+		if !slices.Equal(got.Tags, []string{"home", "errands"}) {
+			t.Errorf("tags not normalised: %q", got.Tags)
+		}
+		if !got.CreatedAt.Equal(nowTime) || !got.UpdatedAt.Equal(nowTime) {
+			t.Errorf("timestamps not set: %+v", got)
+		}
+		if store.state.NextID != 2 || len(store.state.Tasks) != 1 {
+			t.Errorf("unexpected stored state: %+v", store.state)
+		}
+	})
+
+	t.Run("IDs are never reused after deleting the newest task", func(t *testing.T) {
+		svc, _ := newTestService()
+		for range 3 {
+			if _, err := svc.Add("task", AddOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := svc.Delete([]int{3}); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := svc.Add("next", AddOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ID != 4 {
+			t.Errorf("got ID %d, want 4", got.ID)
+		}
+	})
+
+	t.Run("recovers NextID from tasks when missing", func(t *testing.T) {
+		svc, _ := newTestService(taskWith(7, StatusTodo))
+		got, err := svc.Add("next", AddOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ID != 8 {
+			t.Errorf("got ID %d, want 8", got.ID)
+		}
+	})
+
+	t.Run("keeps given priority and due date", func(t *testing.T) {
+		svc, _ := newTestService()
+		due := baseTime
+		got, err := svc.Add("x", AddOptions{Priority: PriorityHigh, Due: &due})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Priority != PriorityHigh || got.Due == nil || !got.Due.Equal(due) {
+			t.Errorf("unexpected task: %+v", got)
+		}
+	})
+
+	t.Run("fails when store is unavailable", func(t *testing.T) {
+		svc, store := newTestService()
+		store.shouldFail = true
+		if _, err := svc.Add("x", AddOptions{}); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+}
+
+func TestService_Get(t *testing.T) {
+	svc, _ := newTestService(taskWith(1, StatusTodo), taskWith(2, StatusDone))
+
+	got, err := svc.Get(2)
+	if err != nil || got.ID != 2 {
+		t.Fatalf("Get(2) = %+v, %v", got, err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			memStore := &mockStore{tasks: tt.initialTasks}
-			svc := NewService(memStore)
-
-			id, err := svc.Add(tt.inputTitle)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("Add() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr {
-				savedTasks := memStore.tasks
-				newCreatedTask := savedTasks[len(savedTasks)-1]
-
-				if id != tt.wantID {
-					t.Errorf("Expected ID %d, got %d", tt.wantID, id)
-				}
-				if newCreatedTask.Title != tt.inputTitle {
-					t.Errorf("Expected Title %q, got %q", tt.inputTitle, newCreatedTask.Title)
-				}
-				if newCreatedTask.Status != tt.wantStatus {
-					t.Errorf("Expected Status %q, got %q", tt.wantStatus, newCreatedTask.Status)
-				}
-				if newCreatedTask.CreatedAt.IsZero() || newCreatedTask.UpdatedAt.IsZero() {
-					t.Error("Expected timestamps to be populated, but they were empty")
-				}
-			}
-		})
+	_, err = svc.Get(9)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get(9) error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestService_Update(t *testing.T) {
-	oldTime := time.Now().Add(-1 * time.Hour)
+	description := "New description"
+	high := PriorityHigh
+	due := baseTime.AddDate(0, 0, 5)
+	tags := []string{"Work"}
+	noTags := []string{}
+
+	withExtras := taskWith(1, StatusTodo)
+	oldDue := baseTime
+	withExtras.Due = &oldDue
+	withExtras.Tags = []string{"old"}
 
 	tests := []struct {
-		name          string
-		initialTasks  []TaskEntity
-		inputID       int
-		inputTitle    string
-		wantErr       bool
-		expectedTitle string
+		name    string
+		patch   Patch
+		id      int
+		wantErr error
+		check   func(t *testing.T, got TaskEntity)
 	}{
 		{
-			name:          "Successfully updates an existing task",
-			initialTasks:  []TaskEntity{{ID: 1, Title: "Old Title", Status: constants.StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
-			inputID:       1,
-			inputTitle:    "New Title",
-			wantErr:       false,
-			expectedTitle: "New Title",
+			name:  "changes only the description",
+			id:    1,
+			patch: Patch{Description: &description},
+			check: func(t *testing.T, got TaskEntity) {
+				if got.Description != description || got.Priority != PriorityMedium || got.Due == nil {
+					t.Errorf("unexpected task: %+v", got)
+				}
+			},
 		},
 		{
-			name:         "Fails if task ID does not exist",
-			initialTasks: []TaskEntity{{ID: 1, Title: "Old Title", Status: constants.StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
-			inputID:      42,
-			inputTitle:   "New Title",
-			wantErr:      true,
+			name:  "changes priority, due date and tags",
+			id:    1,
+			patch: Patch{Priority: &high, Due: &due, Tags: &tags},
+			check: func(t *testing.T, got TaskEntity) {
+				if got.Priority != high || !got.Due.Equal(due) || !slices.Equal(got.Tags, []string{"work"}) {
+					t.Errorf("unexpected task: %+v", got)
+				}
+			},
 		},
 		{
-			name:         "Fails if store is unavailable",
-			initialTasks: nil,
-			inputID:      1,
-			inputTitle:   "New Title",
-			wantErr:      true,
+			name:  "clears due date and tags",
+			id:    1,
+			patch: Patch{ClearDue: true, Tags: &noTags},
+			check: func(t *testing.T, got TaskEntity) {
+				if got.Due != nil || len(got.Tags) != 0 {
+					t.Errorf("unexpected task: %+v", got)
+				}
+			},
+		},
+		{
+			name:    "fails for a missing ID",
+			id:      42,
+			patch:   Patch{Description: &description},
+			wantErr: ErrNotFound,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
-			svc := NewService(memStore)
+			svc, store := newTestService(withExtras)
 
-			err := svc.Update(tt.inputID, tt.inputTitle)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("Update() error = %v, wantErr %v", err, tt.wantErr)
+			err := svc.Update(tt.id, tt.patch)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Update() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
 			}
 
-			if !tt.wantErr {
-				updated := memStore.tasks[0]
-				if updated.Title != tt.expectedTitle {
-					t.Errorf("Expected title %q, got %q", tt.expectedTitle, updated.Title)
-				}
-				if !updated.UpdatedAt.After(oldTime) {
-					t.Error("Expected UpdatedAt to be refreshed, but it was not")
-				}
-				if updated.CreatedAt != oldTime {
-					t.Error("Expected CreatedAt to be unchanged")
-				}
+			got := store.state.Tasks[0]
+			if !got.UpdatedAt.Equal(nowTime) || !got.CreatedAt.Equal(baseTime) {
+				t.Errorf("timestamps wrong: %+v", got)
 			}
+			tt.check(t, got)
 		})
 	}
+}
+
+func TestService_SetStatus(t *testing.T) {
+	t.Run("updates several tasks", func(t *testing.T) {
+		svc, store := newTestService(taskWith(1, StatusTodo), taskWith(2, StatusTodo), taskWith(3, StatusTodo))
+
+		if err := svc.SetStatus([]int{1, 3}, StatusDone); err != nil {
+			t.Fatal(err)
+		}
+
+		want := []Status{StatusDone, StatusTodo, StatusDone}
+		for i, task := range store.state.Tasks {
+			if task.Status != want[i] {
+				t.Errorf("task %d status = %q, want %q", task.ID, task.Status, want[i])
+			}
+		}
+		if !store.state.Tasks[0].UpdatedAt.Equal(nowTime) || !store.state.Tasks[1].UpdatedAt.Equal(baseTime) {
+			t.Error("UpdatedAt should change only on updated tasks")
+		}
+	})
+
+	t.Run("changes nothing if any ID is missing", func(t *testing.T) {
+		svc, store := newTestService(taskWith(1, StatusTodo))
+
+		err := svc.SetStatus([]int{1, 5, 6}, StatusDone)
+		var nf *NotFoundError
+		if !errors.As(err, &nf) || !slices.Equal(nf.IDs, []int{5, 6}) {
+			t.Fatalf("error = %v, want NotFoundError for 5 and 6", err)
+		}
+		if store.saves != 0 || store.state.Tasks[0].Status != StatusTodo {
+			t.Error("store should be untouched")
+		}
+	})
+
+	t.Run("can move a task back to todo", func(t *testing.T) {
+		svc, store := newTestService(taskWith(1, StatusDone))
+		if err := svc.SetStatus([]int{1}, StatusTodo); err != nil {
+			t.Fatal(err)
+		}
+		if store.state.Tasks[0].Status != StatusTodo {
+			t.Error("status not changed")
+		}
+	})
 }
 
 func TestService_Delete(t *testing.T) {
-	tests := []struct {
-		name           string
-		initialTasks   []TaskEntity
-		inputID        int
-		wantErr        bool
-		wantTasksCount int
-	}{
-		{
-			name: "Successfully deletes an existing task",
-			initialTasks: []TaskEntity{
-				{ID: 1, Title: "Buy groceries", Status: constants.StatusTodo},
-			},
-			inputID:        1,
-			wantErr:        false,
-			wantTasksCount: 0,
-		},
-		{
-			name: "Deletes the correct task when multiple exist",
-			initialTasks: []TaskEntity{
-				{ID: 1, Title: "Task one", Status: constants.StatusTodo},
-				{ID: 2, Title: "Task two", Status: constants.StatusTodo},
-				{ID: 3, Title: "Task three", Status: constants.StatusTodo},
-			},
-			inputID:        2,
-			wantErr:        false,
-			wantTasksCount: 2,
-		},
-		{
-			name: "Fails if task ID does not exist",
-			initialTasks: []TaskEntity{
-				{ID: 1, Title: "Buy groceries", Status: constants.StatusTodo},
-			},
-			inputID: 42,
-			wantErr: true,
-		},
-		{
-			name:         "Fails if store is unavailable",
-			initialTasks: nil,
-			inputID:      1,
-			wantErr:      true,
-		},
-	}
+	t.Run("deletes several tasks", func(t *testing.T) {
+		svc, store := newTestService(taskWith(1, StatusTodo), taskWith(2, StatusTodo), taskWith(3, StatusTodo))
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
-			svc := NewService(memStore)
+		if err := svc.Delete([]int{1, 3}); err != nil {
+			t.Fatal(err)
+		}
+		if got := ids(store.state.Tasks); !slices.Equal(got, []int{2}) {
+			t.Errorf("remaining IDs = %v, want [2]", got)
+		}
+	})
 
-			err := svc.Delete(tt.inputID)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("Delete() error = %v, wantErr %v", err, tt.wantErr)
-			}
+	t.Run("deletes nothing if any ID is missing", func(t *testing.T) {
+		svc, store := newTestService(taskWith(1, StatusTodo))
 
-			if !tt.wantErr {
-				if len(memStore.tasks) != tt.wantTasksCount {
-					t.Errorf("Expected %d tasks remaining, got %d", tt.wantTasksCount, len(memStore.tasks))
-				}
-
-				for _, task := range memStore.tasks {
-					if task.ID == tt.inputID {
-						t.Errorf("Task with ID %d still present after deletion", tt.inputID)
-					}
-				}
-			}
-		})
-	}
+		if err := svc.Delete([]int{1, 9}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("error = %v, want ErrNotFound", err)
+		}
+		if store.saves != 0 {
+			t.Error("store should be untouched")
+		}
+	})
 }
 
-func TestService_UpdateStatus(t *testing.T) {
-	oldTime := time.Now().Add(-1 * time.Hour)
+func TestService_Clear(t *testing.T) {
+	svc, store := newTestService(taskWith(1, StatusDone), taskWith(2, StatusTodo), taskWith(3, StatusDone))
 
-	tests := []struct {
-		name           string
-		initialTasks   []TaskEntity
-		inputID        int
-		inputStatus    string
-		wantErr        bool
-		expectedStatus string
-	}{
-		{
-			name:           "Successfully marks a task as in-progress",
-			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
-			inputID:        1,
-			inputStatus:    constants.StatusInProgress,
-			wantErr:        false,
-			expectedStatus: constants.StatusInProgress,
-		},
-		{
-			name:           "Successfully marks a task as done",
-			initialTasks:   []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusInProgress, CreatedAt: oldTime, UpdatedAt: oldTime}},
-			inputID:        1,
-			inputStatus:    constants.StatusDone,
-			wantErr:        false,
-			expectedStatus: constants.StatusDone,
-		},
-		{
-			name:         "Fails if task ID does not exist",
-			initialTasks: []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusTodo}},
-			inputID:      42,
-			inputStatus:  constants.StatusDone,
-			wantErr:      true,
-		},
-		{
-			name:         "Fails if store is unavailable",
-			initialTasks: nil,
-			inputID:      1,
-			inputStatus:  constants.StatusDone,
-			wantErr:      true,
-		},
+	n, err := svc.Clear(StatusDone)
+	if err != nil || n != 2 {
+		t.Fatalf("Clear() = %d, %v; want 2, nil", n, err)
+	}
+	if got := ids(store.state.Tasks); !slices.Equal(got, []int{2}) {
+		t.Errorf("remaining IDs = %v, want [2]", got)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
-			svc := NewService(memStore)
-
-			err := svc.UpdateStatus(tt.inputID, tt.inputStatus)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("UpdateStatus() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr {
-				updated := memStore.tasks[0]
-				if updated.Status != tt.expectedStatus {
-					t.Errorf("Expected status %q, got %q", tt.expectedStatus, updated.Status)
-				}
-				if !updated.UpdatedAt.After(oldTime) {
-					t.Error("Expected UpdatedAt to be refreshed, but it was not")
-				}
-				if updated.CreatedAt != oldTime {
-					t.Error("Expected CreatedAt to be unchanged")
-				}
-			}
-		})
+	saves := store.saves
+	if n, err := svc.Clear(StatusDone); err != nil || n != 0 || store.saves != saves {
+		t.Errorf("second Clear() = %d, %v and saved=%v; want 0, nil, no save", n, err, store.saves != saves)
 	}
 }
 
 func TestService_List(t *testing.T) {
+	day := func(d int) *time.Time {
+		v := baseTime.AddDate(0, 0, d)
+		return &v
+	}
+
 	tasks := []TaskEntity{
-		{ID: 1, Title: "Buy groceries", Status: constants.StatusTodo},
-		{ID: 2, Title: "Write tests", Status: constants.StatusInProgress},
-		{ID: 3, Title: "Deploy app", Status: constants.StatusDone},
-		{ID: 4, Title: "Review PR", Status: constants.StatusDone},
+		{ID: 1, Description: "Buy groceries", Status: StatusTodo, Priority: PriorityLow, Tags: []string{"home"}, Due: day(3), CreatedAt: baseTime},
+		{ID: 2, Description: "Write tests", Status: StatusInProgress, Priority: PriorityHigh, Tags: []string{"work"}, CreatedAt: baseTime.Add(time.Hour)},
+		{ID: 3, Description: "Deploy app", Status: StatusDone, Priority: PriorityMedium, Tags: []string{"work"}, Due: day(1), CreatedAt: baseTime.Add(-time.Hour)},
+		{ID: 4, Description: "Review tests PR", Status: StatusDone, Priority: PriorityHigh, CreatedAt: baseTime},
+		{ID: 5, Description: "legacy task with no priority", Status: StatusTodo, CreatedAt: baseTime},
 	}
 
 	tests := []struct {
-		name          string
-		initialTasks  []TaskEntity
-		filter        string
-		wantErr       bool
-		wantCount     int
-		wantStatusAll string
+		name    string
+		opts    ListOptions
+		wantIDs []int
 	}{
-		{
-			name:         "Returns all tasks when filter is empty",
-			initialTasks: tasks,
-			filter:       "",
-			wantErr:      false,
-			wantCount:    4,
-		},
-		{
-			name:          "Returns only todo tasks",
-			initialTasks:  tasks,
-			filter:        constants.StatusTodo,
-			wantErr:       false,
-			wantCount:     1,
-			wantStatusAll: constants.StatusTodo,
-		},
-		{
-			name:          "Returns only in-progress tasks",
-			initialTasks:  tasks,
-			filter:        constants.StatusInProgress,
-			wantErr:       false,
-			wantCount:     1,
-			wantStatusAll: constants.StatusInProgress,
-		},
-		{
-			name:          "Returns only done tasks",
-			initialTasks:  tasks,
-			filter:        constants.StatusDone,
-			wantErr:       false,
-			wantCount:     2,
-			wantStatusAll: constants.StatusDone,
-		},
-		{
-			name:         "Returns empty slice when no tasks match the filter",
-			initialTasks: []TaskEntity{{ID: 1, Title: "Task", Status: constants.StatusTodo}},
-			filter:       constants.StatusDone,
-			wantErr:      false,
-			wantCount:    0,
-		},
-		{
-			name:         "Returns empty slice when store is empty",
-			initialTasks: []TaskEntity{},
-			filter:       "",
-			wantErr:      false,
-			wantCount:    0,
-		},
-		{
-			name:         "Fails if store is unavailable",
-			initialTasks: nil,
-			filter:       "",
-			wantErr:      true,
-		},
+		{"no filter returns everything by ID", ListOptions{}, []int{1, 2, 3, 4, 5}},
+		{"filter by status", ListOptions{Status: StatusDone}, []int{3, 4}},
+		{"filter by priority", ListOptions{Priority: PriorityHigh}, []int{2, 4}},
+		{"missing priority counts as medium", ListOptions{Priority: PriorityMedium}, []int{3, 5}},
+		{"filter by tag is case-insensitive", ListOptions{Tag: "WORK"}, []int{2, 3}},
+		{"search is case-insensitive", ListOptions{Query: "TESTS"}, []int{2, 4}},
+		{"filters combine", ListOptions{Status: StatusDone, Tag: "work"}, []int{3}},
+		{"no matches", ListOptions{Status: StatusInProgress, Tag: "home"}, []int{}},
+		{"sort by priority, then ID", ListOptions{SortBy: SortPriority}, []int{2, 4, 3, 5, 1}},
+		{"sort by due puts undated tasks last", ListOptions{SortBy: SortDue}, []int{3, 1, 2, 4, 5}},
+		{"sort by created", ListOptions{SortBy: SortCreated}, []int{3, 1, 4, 5, 2}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
-			svc := NewService(memStore)
+			svc, store := newTestService(tasks...)
 
-			result, err := svc.List(tt.filter)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("List() error = %v, wantErr %v", err, tt.wantErr)
+			got, err := svc.List(tt.opts)
+			if err != nil {
+				t.Fatal(err)
 			}
-
-			if !tt.wantErr {
-				if len(result) != tt.wantCount {
-					t.Errorf("Expected %d tasks, got %d", tt.wantCount, len(result))
-				}
-
-				if tt.wantStatusAll != "" {
-					for _, task := range result {
-						if task.Status != tt.wantStatusAll {
-							t.Errorf("Expected all tasks to have status %q, got %q", tt.wantStatusAll, task.Status)
-						}
-					}
-				}
+			if gotIDs := ids(got); !slices.Equal(gotIDs, tt.wantIDs) {
+				t.Errorf("IDs = %v, want %v", gotIDs, tt.wantIDs)
+			}
+			if store.saves != 0 {
+				t.Error("List must not save")
 			}
 		})
+	}
+
+	t.Run("fails when store is unavailable", func(t *testing.T) {
+		svc, store := newTestService()
+		store.shouldFail = true
+		if _, err := svc.List(ListOptions{}); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+}
+
+func TestTaskEntity_Overdue(t *testing.T) {
+	now := time.Date(2026, 10, 10, 15, 0, 0, 0, time.UTC)
+	date := func(d int) *time.Time {
+		v := time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC)
+		return &v
+	}
+
+	tests := []struct {
+		name string
+		task TaskEntity
+		want bool
+	}{
+		{"no due date", TaskEntity{Status: StatusTodo}, false},
+		{"due yesterday", TaskEntity{Status: StatusTodo, Due: date(9)}, true},
+		{"due today is not overdue", TaskEntity{Status: StatusTodo, Due: date(10)}, false},
+		{"done tasks are never overdue", TaskEntity{Status: StatusDone, Due: date(1)}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.task.Overdue(now); got != tt.want {
+				t.Errorf("Overdue() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParsers(t *testing.T) {
+	if _, err := ParseStatus("in-progress"); err != nil {
+		t.Error(err)
+	}
+	if _, err := ParseStatus("doing"); err == nil {
+		t.Error("ParseStatus accepted an unknown status")
+	}
+	if _, err := ParsePriority("high"); err != nil {
+		t.Error(err)
+	}
+	if _, err := ParsePriority("urgent"); err == nil {
+		t.Error("ParsePriority accepted an unknown priority")
+	}
+	if _, err := ParseSortField("due"); err != nil {
+		t.Error(err)
+	}
+	if _, err := ParseSortField("colour"); err == nil {
+		t.Error("ParseSortField accepted an unknown field")
 	}
 }
