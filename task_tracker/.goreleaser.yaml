@@ -1,0 +1,37 @@
+# Builds release archives for task-cli. Run locally with `make release-snapshot`;
+# the release workflow publishes them when a v* tag is pushed.
+version: 2
+
+project_name: task-cli
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/task-cli
+    binary: task-cli
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

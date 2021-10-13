@@ -1,0 +1,53 @@
+name: task-tracker CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["task_tracker/**", ".github/workflows/task-tracker-ci.yml"]
+  pull_request:
+    paths: ["task_tracker/**", ".github/workflows/task-tracker-ci.yml"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: task_tracker
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: task_tracker/go.mod
+          cache-dependency-path: task_tracker/go.mod
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Build
+        run: go build ./cmd/task-cli
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: task_tracker/go.mod
+          cache-dependency-path: task_tracker/go.mod
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          working-directory: task_tracker
