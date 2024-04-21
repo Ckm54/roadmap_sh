@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
 	"strings"
 )
 
 type TaskRunner interface {
 	Add(title string) error
+	Update(id int, title string) error
 }
 
 var svc TaskRunner
@@ -27,8 +29,8 @@ func ExecuteLine(line string) error {
 	switch subcommand {
 	case "add":
 		return handleAdd(args[1:])
-	// case "update":
-	// 	return handleUpdate(args[1:])
+	case "update":
+		return handleUpdate(args[1:])
 	case "list":
 		return HandleList()
 	case "help":
@@ -46,4 +48,14 @@ func printGlobalHelp() {
 	fmt.Println("\nAvailable commands:")
 	fmt.Println("	add			Add a new task")
 	fmt.Println("	list		List all your pending tasks")
+}
+
+func prepareTaskTitle(cmd *flag.FlagSet) string {
+	taskTitle := strings.Join(cmd.Args(), " ")
+
+	taskTitle = strings.TrimSpace(taskTitle)
+	taskTitle = strings.Trim(taskTitle, `"'`)
+	taskTitle = strings.TrimSpace(taskTitle)
+
+	return taskTitle
 }

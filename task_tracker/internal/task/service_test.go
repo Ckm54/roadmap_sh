@@ -3,6 +3,7 @@ package task
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 type mockStore struct {
@@ -77,6 +78,67 @@ func TestService_Add(t *testing.T) {
 				}
 				if newCreatedTask.CreatedAt.IsZero() || newCreatedTask.UpdatedAt.IsZero() {
 					t.Error("Expected timestamps to be populated, but they were empty")
+				}
+			}
+		})
+	}
+}
+
+func TestService_Update(t *testing.T) {
+	oldTime := time.Now().Add(-1 * time.Hour)
+
+	tests := []struct {
+		name          string
+		initialTasks  []TaskEntity
+		inputID       int
+		inputTitle    string
+		wantErr       bool
+		expectedTitle string
+	}{
+		{
+			name:          "Successfully updates an existing task",
+			initialTasks:  []TaskEntity{{ID: 1, Title: "Old Title", Status: StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			inputID:       1,
+			inputTitle:    "New Title",
+			wantErr:       false,
+			expectedTitle: "New Title",
+		},
+		{
+			name:         "Fails if task ID does not exist",
+			initialTasks: []TaskEntity{{ID: 1, Title: "Old Title", Status: StatusTodo, CreatedAt: oldTime, UpdatedAt: oldTime}},
+			inputID:      42,
+			inputTitle:   "New Title",
+			wantErr:      true,
+		},
+		{
+			name:         "Fails if store is unavailable",
+			initialTasks: nil,
+			inputID:      1,
+			inputTitle:   "New Title",
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			memStore := &mockStore{tasks: tt.initialTasks, shouldFail: tt.initialTasks == nil}
+			svc := NewService(memStore)
+
+			err := svc.Update(tt.inputID, tt.inputTitle)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Update() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr {
+				updated := memStore.tasks[0]
+				if updated.Title != tt.expectedTitle {
+					t.Errorf("Expected title %q, got %q", tt.expectedTitle, updated.Title)
+				}
+				if !updated.UpdatedAt.After(oldTime) {
+					t.Error("Expected UpdatedAt to be refreshed, but it was not")
+				}
+				if updated.CreatedAt != oldTime {
+					t.Error("Expected CreatedAt to be unchanged")
 				}
 			}
 		})

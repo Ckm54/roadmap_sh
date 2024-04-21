@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"strings"
 )
 
 func handleAdd(subArgs []string) error {
@@ -16,11 +15,7 @@ func handleAdd(subArgs []string) error {
 		return err
 	}
 
-	taskTitle := strings.Join(addCmd.Args(), " ")
-
-	taskTitle = strings.TrimSpace(taskTitle)
-	taskTitle = strings.Trim(taskTitle, `"'`)
-	taskTitle = strings.TrimSpace(taskTitle)
+	taskTitle := prepareTaskTitle(addCmd)
 
 	if taskTitle == "" {
 		return errors.New("task cannot be empty; usage add [title]")

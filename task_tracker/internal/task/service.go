@@ -37,3 +37,20 @@ func (s *Service) Add(title string) error {
 
 	return s.store.Save(tasks)
 }
+
+func (s *Service) Update(id int, title string) error {
+	tasks, err := s.store.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load tasks: %w", err)
+	}
+
+	for i, t := range tasks {
+		if t.ID == id {
+			tasks[i].Title = title
+			tasks[i].UpdatedAt = time.Now()
+			return s.store.Save(tasks)
+		}
+	}
+
+	return fmt.Errorf("task with ID %d not found", id)
+}

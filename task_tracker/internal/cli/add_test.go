@@ -52,8 +52,8 @@ func TestHandleAdd_CliParsing(t *testing.T) {
 				t.Errorf("HandleAdd() unexpected error status = %v, want %v", err, tt.wantErr)
 			}
 
-			if !tt.wantErr && mockSvc.addCalledWith != tt.wantTitle {
-				t.Errorf("HandleAdd() forwaded title = %q, expected %q", mockSvc.addCalledWith, tt.wantTitle)
+			if !tt.wantErr && mockSvc.calledAddTitle != tt.wantTitle {
+				t.Errorf("HandleAdd() forwaded title = %q, expected %q", mockSvc.calledAddTitle, tt.wantTitle)
 			}
 		})
 	}
